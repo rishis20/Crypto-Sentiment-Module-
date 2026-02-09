@@ -14,7 +14,7 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
 
 ## Quick start (first time)
 
-1. **Set up Ollama** (one-time) → see [Setting up Ollama (for the team)](#setting-up-ollama-for-the-team) below.
+1. **Download Ollama, then pull the llama3.2 model** (one-time) → see [Setting up Ollama (for the team)](#setting-up-ollama-for-the-team) below.
 2. **Install Python dependencies** (from project root): `pip install -r requirements.txt`
 3. **Run the API** from the `Inital model` folder: `cd "Inital model"` then `python analyze.py`
 4. Open **http://localhost:8000/docs** to try the API.
@@ -22,13 +22,13 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
 ## Prerequisites
 
 - **Python 3.8+** (3.12 or 3.13 recommended; 3.14 supported with current `requirements.txt`)
-- **Ollama** installed and running, with at least one model pulled (see below)
+- **Ollama** installed and running, with the **llama3.2** model pulled (see below)
 
 ## Setting up Ollama (for the team)
 
-Ollama runs the language model locally. Everyone on the team needs to install it once and pull a model. No API key or account is required.
+1. **Download and install Ollama**, then 2. **pull the llama3.2 model**. Everyone on the team does this once per machine. No API key or account is required.
 
-### Step 1: Install Ollama
+### Step 1: Download and install Ollama
 
 - **macOS / Windows / Linux:** Download the installer from **[https://ollama.ai](https://ollama.ai)** and run it.
 - **macOS (Homebrew):** `brew install ollama`
@@ -47,15 +47,15 @@ You need the Ollama server running whenever you use the Sentiment API.
   ```
   Leave this terminal open. Use a second terminal for the rest of the steps.
 
-### Step 3: Pull a model
+### Step 3: Download the llama3.2 model
 
-The Sentiment API uses an Ollama model to analyze text. Pull at least one model (first run will download it):
+The Sentiment API uses **llama3.2** by default. Pull it once (first time will download the model):
 
 ```bash
 ollama pull llama3.2
 ```
 
-This is the default model used by the API. For a smaller/faster option (less accurate):
+For a smaller/faster option (less accurate):
 
 ```bash
 ollama pull llama3.2:1b
