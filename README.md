@@ -22,14 +22,21 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
    - Default: `llama3.2` (or specify your preferred model)
    - Download a model: `ollama pull llama3.2`
 
+## Project structure
+
+- **Project root** (`Crypto-Sentiment-Module-/`): contains `README.md` and `requirements.txt`
+- **`Inital model/`**: contains the API and scripts
+  - `analyze.py` — FastAPI sentiment API (Ollama)
+  - `example_usage.py` — example client for the API
+
 ## Installation
 
-1. **Navigate to the sentiment_llm directory:**
+1. **Navigate to the project root** (the folder that contains `requirements.txt` and `Inital model`):
    ```bash
-   cd app/backend/sentiment_llm
+   cd /path/to/Crypto-Sentiment-Module-
    ```
 
-2. **Install Python dependencies:**
+2. **Install Python dependencies** (from project root):
    ```bash
    pip install -r requirements.txt
    ```
@@ -42,7 +49,7 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
 
 ## Configuration
 
-Create a `.env` file in the `sentiment_llm` directory (optional):
+Create a `.env` file in the **`Inital model`** directory (optional), or in the project root if you run the server from there:
 
 ```env
 # Ollama server URL (default: http://localhost:11434)
@@ -60,6 +67,12 @@ If no `.env` file is provided, the defaults above will be used.
 ## Usage
 
 ### Starting the API Server
+
+Run the server from the **`Inital model`** directory so `analyze.py` and `.env` are found:
+
+```bash
+cd "Inital model"
+```
 
 **Option 1: Using Python directly**
 ```bash
@@ -329,7 +342,7 @@ router.post('/api/sentiment/analyze', async (req, res) => {
 
 2. **View API logs** in the terminal where the server is running
 
-3. **Check environment variables** are set correctly in `.env`
+3. **Check environment variables** are set correctly in `.env` (in `Inital model/` or project root)
 
 ## Performance Considerations
 
@@ -342,7 +355,10 @@ router.post('/api/sentiment/analyze', async (req, res) => {
 
 ### Running in Development Mode
 
+From the **`Inital model`** directory:
+
 ```bash
+cd "Inital model"
 uvicorn analyze:app --host 0.0.0.0 --port 8000 --reload
 ```
 
