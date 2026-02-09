@@ -1,4 +1,5 @@
-# Python 3.14–compatible versions (pydantic 2.12+ provides 3.14 wheels)
+# Sentiment API dependencies. Ollama must be installed and running separately (see README).
+# Python 3.8+; 3.12/3.13 recommended; 3.14 supported (pydantic 2.12+).
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 pydantic>=2.12.0

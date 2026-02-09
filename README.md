@@ -12,15 +12,74 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
 - **Robust error handling** for connection issues and timeouts
 - **Interactive API documentation** via FastAPI's Swagger UI
 
+## Quick start (first time)
+
+1. **Set up Ollama** (one-time) → see [Setting up Ollama (for the team)](#setting-up-ollama-for-the-team) below.
+2. **Install Python dependencies** (from project root): `pip install -r requirements.txt`
+3. **Run the API** from the `Inital model` folder: `cd "Inital model"` then `python analyze.py`
+4. Open **http://localhost:8000/docs** to try the API.
+
 ## Prerequisites
 
-1. **Python 3.8+** installed on your system
-2. **Ollama** installed and running
-   - Download from [https://ollama.ai](https://ollama.ai)
-   - Ensure Ollama is running: `ollama serve`
-3. **At least one Ollama model** downloaded
-   - Default: `llama3.2` (or specify your preferred model)
-   - Download a model: `ollama pull llama3.2`
+- **Python 3.8+** (3.12 or 3.13 recommended; 3.14 supported with current `requirements.txt`)
+- **Ollama** installed and running, with at least one model pulled (see below)
+
+## Setting up Ollama (for the team)
+
+Ollama runs the language model locally. Everyone on the team needs to install it once and pull a model. No API key or account is required.
+
+### Step 1: Install Ollama
+
+- **macOS / Windows / Linux:** Download the installer from **[https://ollama.ai](https://ollama.ai)** and run it.
+- **macOS (Homebrew):** `brew install ollama`
+- **Linux (script):** `curl -fsSL https://ollama.com/install.sh | sh`
+
+After installation, the Ollama app may start automatically (e.g. on macOS/Windows). If not, you’ll start it in Step 2.
+
+### Step 2: Start the Ollama server
+
+You need the Ollama server running whenever you use the Sentiment API.
+
+- **If you use the Ollama desktop app:** Open the app and leave it running (it starts the server for you).
+- **From the terminal (any OS):**
+  ```bash
+  ollama serve
+  ```
+  Leave this terminal open. Use a second terminal for the rest of the steps.
+
+### Step 3: Pull a model
+
+The Sentiment API uses an Ollama model to analyze text. Pull at least one model (first run will download it):
+
+```bash
+ollama pull llama3.2
+```
+
+This is the default model used by the API. For a smaller/faster option (less accurate):
+
+```bash
+ollama pull llama3.2:1b
+```
+
+List installed models anytime:
+
+```bash
+ollama list
+```
+
+### Step 4: Verify Ollama is working
+
+In a terminal:
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+You should see JSON listing your models. If you get “connection refused” or no response, Ollama isn’t running — repeat Step 2.
+
+---
+
+Once this works, you can [install Python dependencies](#installation) and [run the Sentiment API](#usage).
 
 ## Project structure
 
@@ -31,21 +90,30 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
 
 ## Installation
 
+Do this **after** [Ollama is set up](#setting-up-ollama-for-the-team) and the Ollama server is running.
+
 1. **Navigate to the project root** (the folder that contains `requirements.txt` and `Inital model`):
    ```bash
    cd /path/to/Crypto-Sentiment-Module-
    ```
 
-2. **Install Python dependencies** (from project root):
+2. **Create a virtual environment (recommended for the team):**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate   # macOS/Linux
+   # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install Python dependencies** (from project root):
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Verify Ollama is running:**
+4. **Verify Ollama is running** (in another terminal, with Ollama started):
    ```bash
    curl http://localhost:11434/api/tags
    ```
-   If this returns a JSON response, Ollama is running correctly.
+   You should see JSON listing your models. If not, see [Setting up Ollama](#setting-up-ollama-for-the-team) and [Troubleshooting](#troubleshooting).
 
 ## Configuration
 
@@ -311,27 +379,14 @@ router.post('/api/sentiment/analyze', async (req, res) => {
 
 ## Troubleshooting
 
-### Ollama Connection Issues
+### Ollama connection issues
 
-1. **Verify Ollama is running:**
-   ```bash
-   curl http://localhost:11434/api/tags
-   ```
+If the API returns “Cannot connect to Ollama” or similar:
 
-2. **Check Ollama logs:**
-   ```bash
-   ollama serve
-   ```
-
-3. **Verify model is downloaded:**
-   ```bash
-   ollama list
-   ```
-
-4. **Download a model if needed:**
-   ```bash
-   ollama pull llama3.2
-   ```
+1. **Confirm Ollama is running** — In a terminal: `curl http://localhost:11434/api/tags`. You should get JSON. If you get “connection refused,” start Ollama (see [Setting up Ollama](#setting-up-ollama-for-the-team)).
+2. **Start the server** (if not using the desktop app): `ollama serve` (leave it running).
+3. **Check that a model is installed:** `ollama list`. If none are listed, run: `ollama pull llama3.2`.
+4. **Same machine?** The API talks to `http://localhost:11434` by default. If Ollama runs on another machine, set `OLLAMA_BASE_URL` in your `.env` to that host (e.g. `http://other-pc:11434`).
 
 ### API Server Issues
 
