@@ -154,6 +154,32 @@ uvicorn analyze:app --host 0.0.0.0 --port 8000 --reload
 
 The API will start on `http://localhost:8000` (or your configured port).
 
+### RSS to CSV to Ollama (local pipeline, no database)
+
+This project also supports a local CSV-only pipeline:
+1) collect RSS articles,
+2) build a scoring input CSV,
+3) score each row with Ollama.
+
+Run from the **`Inital model`** directory:
+
+```bash
+cd "Inital model"
+python run_ollama_pipeline.py
+```
+
+Generated files:
+- `data/raw/news_raw_YYYY-MM-DD.jsonl` (raw snapshot records)
+- `data/clean/news_clean_YYYY-MM-DD.jsonl` (clean records for model input)
+- `data/scored/sentiment_YYYY-MM-DD.jsonl` (methodology-style scoring output)
+- `data/scored/sentiment_YYYY-MM-DD.csv` (CSV export for comparison)
+
+Optional: override the scoring model for the pipeline run:
+
+```bash
+PIPELINE_OLLAMA_MODEL=llama3.2 python run_ollama_pipeline.py
+```
+
 ### Accessing API Documentation
 
 Once the server is running, visit:
