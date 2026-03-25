@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Tuple
 import csv
+import json
 import re
 import time
 
@@ -30,6 +31,17 @@ class RSSArticleRecord:
     published_date: str
     crypto: str
     text_for_sentiment: str
+
+
+@dataclass
+class RawRSSRecord:
+    source: str
+    url: str
+    published_at: str
+    fetched_at: str
+    title_raw: str
+    summary_raw: str
+    raw_payload: dict
 
 
 def clean_html(text: str) -> str:
@@ -175,6 +187,24 @@ def collect_rss_articles() -> List[RSSArticleRecord]:
     return records
 
 
+def collect_raw_rss_records() -> List[RawRSSRecord]:
+    records: List[RawRSSRecord] = []
+    fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    for source, entry in fetch_feed_items():
+        records.append(
+            RawRSSRecord(
+                source=source.lower(),
+                url=entry.get("link", "") or "",
+                published_at=extract_published_date(entry),
+                fetched_at=fetched_at,
+                title_raw=entry.get("title", "") or "",
+                summary_raw=(entry.get("summary", "") or entry.get("description", "") or ""),
+                raw_payload={"rss_entry": dict(entry)},
+            )
+        )
+    return records
+
+
 def save_to_csv(records: List[RSSArticleRecord], path: str = "rss_articles.csv") -> None:
     fieldnames = [
         "source",
@@ -200,6 +230,12 @@ def save_to_csv(records: List[RSSArticleRecord], path: str = "rss_articles.csv")
                     "text_for_sentiment": r.text_for_sentiment,
                 }
             )
+
+
+def save_jsonl(records: List[dict], path: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def main() -> None:

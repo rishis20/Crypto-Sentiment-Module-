@@ -169,9 +169,10 @@ python run_ollama_pipeline.py
 ```
 
 Generated files:
-- `rss_articles.csv` (raw ingested RSS records)
-- `rss_articles_scoring_input.csv` (first column is text for Ollama scoring)
-- `rss_articles_scored.csv` (includes `sentiment_score`)
+- `data/raw/news_raw_YYYY-MM-DD.jsonl` (raw snapshot records)
+- `data/clean/news_clean_YYYY-MM-DD.jsonl` (clean records for model input)
+- `data/scored/sentiment_YYYY-MM-DD.jsonl` (methodology-style scoring output)
+- `data/scored/sentiment_YYYY-MM-DD.csv` (CSV export for comparison)
 
 Optional: override the scoring model for the pipeline run:
 
