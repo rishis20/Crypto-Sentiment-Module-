@@ -16,7 +16,7 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
 
 1. **Download Ollama, then pull the llama3.2 model** (one-time) → see [Setting up Ollama (for the team)](#setting-up-ollama-for-the-team) below.
 2. **Install Python dependencies** (from project root): `pip install -r requirements.txt`
-3. **Run the API** from the `Inital model` folder: `cd "Inital model"` then `python analyze.py`
+3. **Run the API** from the `model` folder: `cd "model"` then `python analyze.py`
 4. Open **http://localhost:8000/docs** to try the API.
 
 ## Prerequisites
@@ -84,7 +84,7 @@ Once this works, you can [install Python dependencies](#installation) and [run t
 ## Project structure
 
 - **Project root** (`Crypto-Sentiment-Module-/`): contains `README.md` and `requirements.txt`
-- **`Inital model/`**: contains the API and scripts
+- **`model/`**: contains the API and scripts
   - `analyze.py` — FastAPI sentiment API (Ollama)
   - `example_usage.py` — example client for the API
 
@@ -92,7 +92,7 @@ Once this works, you can [install Python dependencies](#installation) and [run t
 
 Do this **after** [Ollama is set up](#setting-up-ollama-for-the-team) and the Ollama server is running.
 
-1. **Navigate to the project root** (the folder that contains `requirements.txt` and `Inital model`):
+1. **Navigate to the project root** (the folder that contains `requirements.txt` and `model`):
    ```bash
    cd /path/to/Crypto-Sentiment-Module-
    ```
@@ -117,7 +117,7 @@ Do this **after** [Ollama is set up](#setting-up-ollama-for-the-team) and the Ol
 
 ## Configuration
 
-Create a `.env` file in the **`Inital model`** directory (optional), or in the project root if you run the server from there:
+Create a `.env` file in the **`model`** directory (optional), or in the project root if you run the server from there:
 
 ```env
 # Ollama server URL (default: http://localhost:11434)
@@ -136,10 +136,10 @@ If no `.env` file is provided, the defaults above will be used.
 
 ### Starting the API Server
 
-Run the server from the **`Inital model`** directory so `analyze.py` and `.env` are found:
+Run the server from the **`model`** directory so `analyze.py` and `.env` are found:
 
 ```bash
-cd "Inital model"
+cd "model"
 ```
 
 **Option 1: Using Python directly**
@@ -161,10 +161,10 @@ This project also supports a local CSV-only pipeline:
 2) build a scoring input CSV,
 3) score each row with Ollama.
 
-Run from the **`Inital model`** directory:
+Run from the **`model`** directory:
 
 ```bash
-cd "Inital model"
+cd "model"
 python run_ollama_pipeline.py
 ```
 
@@ -423,7 +423,7 @@ If the API returns “Cannot connect to Ollama” or similar:
 
 2. **View API logs** in the terminal where the server is running
 
-3. **Check environment variables** are set correctly in `.env` (in `Inital model/` or project root)
+3. **Check environment variables** are set correctly in `.env` (in `model/` or project root)
 
 ## Performance Considerations
 
@@ -436,10 +436,10 @@ If the API returns “Cannot connect to Ollama” or similar:
 
 ### Running in Development Mode
 
-From the **`Inital model`** directory:
+From the **`model`** directory:
 
 ```bash
-cd "Inital model"
+cd "model"
 uvicorn analyze:app --host 0.0.0.0 --port 8000 --reload
 ```
 
