@@ -36,12 +36,8 @@ RSS_FEEDS = {
         "https://www.reddit.com/r/dogecoindev/.rss",
     ],
     "CoinDesk": [
+        # Preferred consolidated CoinDesk RSS feed
         "https://www.coindesk.com/arc/outboundfeeds/rss/",
-        "https://www.coindesk.com/markets/rss",
-        "https://www.coindesk.com/tech/rss",
-        "https://www.coindesk.com/policy/rss",
-        "https://www.coindesk.com/business/rss",
-        "https://www.coindesk.com/learn/rss",
     ],
     "CoinTelegraph": [
         "https://cointelegraph.com/rss",

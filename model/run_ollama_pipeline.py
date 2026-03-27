@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from analyze import OLLAMA_MODEL, analyze_text_sentiment
-from rss_ingest import collect_raw_rss_records, collect_rss_articles, save_jsonl
+from rss_ingest import collect_raw_rss_records, collect_rss_articles, fetch_feed_items, save_jsonl
 
 PROMPT_VERSION = "v1.0.0"
 
@@ -55,8 +55,12 @@ async def run_pipeline(model_name: str | None = None) -> None:
     scored_jsonl_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}.jsonl")
     scored_csv_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}.csv")
 
-    print("Step 1/4: Collecting raw RSS records...")
-    raw_records = collect_raw_rss_records()
+    print("Step 1/4: Fetching RSS feeds (single pass)...")
+    feed_items = fetch_feed_items()
+    print(f"  Fetched entries: {len(feed_items)}")
+
+    print("Step 2/4: Building raw snapshot records...")
+    raw_records = collect_raw_rss_records(feed_items)
     raw_payload = [
         {
             "source": r.source,
@@ -72,8 +76,8 @@ async def run_pipeline(model_name: str | None = None) -> None:
     save_jsonl(raw_payload, raw_path)
     print(f"  Saved raw records: {len(raw_payload)} -> {raw_path}")
 
-    print("Step 2/4: Building clean records...")
-    clean_records = collect_rss_articles()
+    print("Step 3/4: Building clean records...")
+    clean_records = collect_rss_articles(feed_items)
     clean_payload = [
         {
             "source": r.source.lower(),
@@ -94,7 +98,7 @@ async def run_pipeline(model_name: str | None = None) -> None:
         print("No RSS records matched configured crypto keywords. Skipping scoring.")
         return
 
-    print("Step 3/4: Scoring with Ollama...")
+    print("Step 4/4: Scoring with Ollama...")
     scored_payload = []
     for item in clean_payload:
         score = await analyze_text_sentiment(item["text_for_model"], model_to_use)
@@ -115,7 +119,7 @@ async def run_pipeline(model_name: str | None = None) -> None:
     save_jsonl(scored_payload, scored_jsonl_path)
     print(f"  Saved scored JSONL: {len(scored_payload)} -> {scored_jsonl_path}")
 
-    print("Step 4/4: Exporting CSV for comparison...")
+    print("Finalizing: Exporting CSV for comparison...")
     pd.DataFrame(scored_payload).to_csv(scored_csv_path, index=False)
     print(f"  Saved scored CSV: {scored_csv_path}")
 

@@ -140,12 +140,13 @@ def build_article_fields(entry: dict) -> Tuple[str, str, str]:
     return title, summary, content
 
 
-def collect_rss_articles() -> List[RSSArticleRecord]:
+def collect_rss_articles(prefetched_items: List[Tuple[str, dict]] | None = None) -> List[RSSArticleRecord]:
     records: List[RSSArticleRecord] = []
     cutoff_date = (datetime.utcnow() - timedelta(days=MAX_DAYS_OLD)).date()
     seen = set()
 
-    for source, entry in fetch_feed_items():
+    items = prefetched_items if prefetched_items is not None else fetch_feed_items()
+    for source, entry in items:
         published_date = extract_published_date(entry)
         try:
             parsed_date = datetime.strptime(published_date, "%Y-%m-%d").date()
@@ -187,10 +188,11 @@ def collect_rss_articles() -> List[RSSArticleRecord]:
     return records
 
 
-def collect_raw_rss_records() -> List[RawRSSRecord]:
+def collect_raw_rss_records(prefetched_items: List[Tuple[str, dict]] | None = None) -> List[RawRSSRecord]:
     records: List[RawRSSRecord] = []
     fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    for source, entry in fetch_feed_items():
+    items = prefetched_items if prefetched_items is not None else fetch_feed_items()
+    for source, entry in items:
         records.append(
             RawRSSRecord(
                 source=source.lower(),
