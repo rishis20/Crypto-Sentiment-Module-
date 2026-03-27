@@ -102,6 +102,13 @@ async def run_pipeline(model_name: str | None = None) -> None:
     scored_payload = []
     for item in clean_payload:
         score = await analyze_text_sentiment(item["text_for_model"], model_to_use)
+        # Retry once if score is malformed/out of contract.
+        if not isinstance(score, (int, float)) or score < -1.0 or score > 1.0:
+            score = await analyze_text_sentiment(item["text_for_model"], model_to_use)
+        # Final contract enforcement.
+        if not isinstance(score, (int, float)):
+            score = 0.0
+        score = max(-1.0, min(1.0, float(score)))
         label = score_to_label(score)
         confidence = round(min(1.0, max(0.0, abs(score))), 3)
         scored_payload.append(
