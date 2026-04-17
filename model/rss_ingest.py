@@ -7,11 +7,12 @@ scored by analyze.py. It does not run any sentiment model itself.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import csv
 import json
 import re
 import time
+import xml.etree.ElementTree as ET
 
 import feedparser
 import requests
@@ -70,8 +71,31 @@ def detect_cryptos(text: str) -> List[str]:
     return found
 
 
-def fetch_feed_items() -> List[Tuple[str, dict]]:
-    items: List[Tuple[str, dict]] = []
+def extract_descriptions_from_raw_xml(raw_xml: str) -> Dict[int, str]:
+    """
+    Extract <description> tags from raw RSS XML before feedparser normalizes them.
+    Returns a dict mapping item index to description text.
+    """
+    descriptions: Dict[int, str] = {}
+    try:
+        root = ET.fromstring(raw_xml)
+        # Handle both namespace and non-namespace versions
+        items = root.findall(".//item")
+        for idx, item in enumerate(items):
+            desc_elem = item.find("description")
+            if desc_elem is not None and desc_elem.text:
+                descriptions[idx] = desc_elem.text
+    except Exception:
+        pass
+    return descriptions
+
+
+def fetch_feed_items() -> List[Tuple[str, dict, str]]:
+    """
+    Fetch RSS items. Returns list of (source, entry, original_description) tuples.
+    original_description is from raw XML before feedparser normalization.
+    """
+    items: List[Tuple[str, dict, str]] = []
     items_per_feed = max(MAX_ITEMS_PER_FEED * 3, 200)
     headers = {
         "User-Agent": (
@@ -84,9 +108,13 @@ def fetch_feed_items() -> List[Tuple[str, dict]]:
         print(f"Fetching {source} feeds ({len(urls)} URLs)...")
         for url in urls:
             parsed = None
+            descriptions_map = {}
             try:
                 response = requests.get(url, headers=headers, timeout=15)
                 response.raise_for_status()
+                raw_text = response.text
+                # Extract descriptions before feedparser normalizes them
+                descriptions_map = extract_descriptions_from_raw_xml(raw_text)
                 parsed = feedparser.parse(response.content)
             except Exception as request_error:
                 # Fallback to direct feedparser URL parsing
@@ -100,8 +128,10 @@ def fetch_feed_items() -> List[Tuple[str, dict]]:
                 continue
 
             print(f"  [ok] {url} -> {len(parsed.entries)} entries")
-            for entry in parsed.entries[:items_per_feed]:
-                items.append((source, entry))
+            for idx, entry in enumerate(parsed.entries[:items_per_feed]):
+                # Include original description from raw XML
+                original_desc = descriptions_map.get(idx, "")
+                items.append((source, entry, original_desc))
             # Light delay to reduce throttling from providers.
             time.sleep(0.2)
     return items
@@ -130,9 +160,34 @@ def extract_published_date(entry: dict) -> str:
     return dt.date().isoformat()
 
 
-def build_article_fields(entry: dict) -> Tuple[str, str, str]:
+def _extract_summary_raw(entry: dict, original_description: str = "") -> str:
+    # Use original description from raw XML if available, before feedparser normalization
+    summary = original_description
+
+    if not summary:
+        # Fallback: check feedparser-normalized fields
+        summary = (
+            entry.get("summary")
+            or entry.get("description")
+            or (entry.get("summary_detail") or {}).get("value")
+            or entry.get("subtitle")
+            or ""
+        )
+
+    if not summary and "content" in entry and entry["content"]:
+        for part in entry["content"]:
+            if isinstance(part, dict):
+                part_value = part.get("value")
+                if part_value:
+                    summary = part_value
+                    break
+
+    return clean_html(summary)
+
+
+def build_article_fields(entry: dict, original_description: str = "") -> Tuple[str, str, str]:
     title = clean_html(entry.get("title", "") or "")
-    summary = clean_html((entry.get("summary", "") or entry.get("description", "") or ""))
+    summary = _extract_summary_raw(entry, original_description)
     content = ""
     if "content" in entry and entry["content"]:
         content = " ".join(part.get("value", "") for part in entry["content"])
@@ -146,7 +201,7 @@ def collect_rss_articles(prefetched_items: List[Tuple[str, dict]] | None = None)
     seen = set()
 
     items = prefetched_items if prefetched_items is not None else fetch_feed_items()
-    for source, entry in items:
+    for source, entry, original_description in items:
         published_date = extract_published_date(entry)
         try:
             parsed_date = datetime.strptime(published_date, "%Y-%m-%d").date()
@@ -155,7 +210,7 @@ def collect_rss_articles(prefetched_items: List[Tuple[str, dict]] | None = None)
         if parsed_date < cutoff_date:
             continue
 
-        title, summary, content = build_article_fields(entry)
+        title, summary, content = build_article_fields(entry, original_description)
         url = entry.get("link", "") or ""
         if not title and not summary and not content:
             continue
@@ -192,7 +247,7 @@ def collect_raw_rss_records(prefetched_items: List[Tuple[str, dict]] | None = No
     records: List[RawRSSRecord] = []
     fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     items = prefetched_items if prefetched_items is not None else fetch_feed_items()
-    for source, entry in items:
+    for source, entry, original_description in items:
         records.append(
             RawRSSRecord(
                 source=source.lower(),
@@ -200,7 +255,7 @@ def collect_raw_rss_records(prefetched_items: List[Tuple[str, dict]] | None = No
                 published_at=extract_published_date(entry),
                 fetched_at=fetched_at,
                 title_raw=entry.get("title", "") or "",
-                summary_raw=(entry.get("summary", "") or entry.get("description", "") or ""),
+                summary_raw=_extract_summary_raw(entry, original_description),
                 raw_payload={"rss_entry": dict(entry)},
             )
         )
