@@ -10,6 +10,8 @@ A FastAPI-based sentiment analysis service that uses Ollama LLM models to genera
 - **Async API** built with FastAPI for high performance
 - **Configurable** model selection and Ollama server URL
 - **Robust error handling** for connection issues and timeouts
+- **RSS ingestion + preprocessing pipeline** with reject tracking and dedupe
+- **JSONL-first artifacts** (`raw`, `clean`, `rejected`, `scored`) plus CSV export
 - **Interactive API documentation** via FastAPI's Swagger UI
 
 ## Quick start (first time)
@@ -86,6 +88,8 @@ Once this works, you can [install Python dependencies](#installation) and [run t
 - **Project root** (`Crypto-Sentiment-Module-/`): contains `README.md` and `requirements.txt`
 - **`model/`**: contains the API and scripts
   - `analyze.py` — FastAPI sentiment API (Ollama)
+  - `rss_ingest.py` — RSS fetch + preprocessing + clean/reject dataset helpers
+  - `run_ollama_pipeline.py` — end-to-end RSS -> clean -> Ollama scoring pipeline
   - `example_usage.py` — example client for the API
 
 ## Installation
@@ -154,12 +158,14 @@ uvicorn analyze:app --host 0.0.0.0 --port 8000 --reload
 
 The API will start on `http://localhost:8000` (or your configured port).
 
-### RSS to CSV to Ollama (local pipeline, no database)
+### RSS to Ollama pipeline (local, no database)
 
-This project also supports a local CSV-only pipeline:
-1) collect RSS articles,
-2) build a scoring input CSV,
-3) score each row with Ollama.
+This project also supports a local file-based pipeline:
+1) collect RSS entries,
+2) write raw snapshot JSONL,
+3) clean and validate records for model input,
+4) score clean records with Ollama,
+5) export JSONL + CSV outputs.
 
 Run from the **`model`** directory:
 
@@ -171,8 +177,17 @@ python run_ollama_pipeline.py
 Generated files:
 - `data/raw/news_raw_YYYY-MM-DD.jsonl` (raw snapshot records)
 - `data/clean/news_clean_YYYY-MM-DD.jsonl` (clean records for model input)
-- `data/scored/sentiment_YYYY-MM-DD.jsonl` (methodology-style scoring output)
+- `data/clean/news_rejected_YYYY-MM-DD.jsonl` (rejected records with reject reasons)
+- `data/scored/sentiment_YYYY-MM-DD.jsonl` (scored records, includes model metadata)
 - `data/scored/sentiment_YYYY-MM-DD.csv` (CSV export for comparison)
+- `data/reports/cleaning_stats_YYYY-MM-DD.json` (counts by source and reject reason)
+
+Pipeline preprocessing/scoring notes:
+- Canonical URL normalization for better duplicate control
+- Boilerplate cleanup and source-aware filters (including Reddit thread/link-image filtering)
+- Quality gates (minimum length, likely-English check, crypto relevance)
+- Deterministic `dedupe_hash` with cross-run dedupe against prior clean artifacts
+- Robust scoring contract: retry once on malformed score, then clamp to `[-1, 1]`
 
 Optional: override the scoring model for the pipeline run:
 
