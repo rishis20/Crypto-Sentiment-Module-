@@ -9,6 +9,7 @@ Outputs:
 """
 
 import asyncio
+import hashlib
 import os
 from datetime import datetime, timezone
 import pandas as pd
@@ -46,6 +47,11 @@ def build_explanation(label: str, score: float) -> str:
     return f"Signals are mixed or informational (score {score:.3f})."
 
 
+def stable_dedupe_hash(title_clean: str, summary_clean: str) -> str:
+    base = f"{title_clean.strip().lower()}||{summary_clean.strip().lower()}"
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
 async def run_pipeline(model_name: str | None = None) -> None:
     model_to_use = model_name or OLLAMA_MODEL
     dirs = ensure_dirs()
@@ -64,6 +70,7 @@ async def run_pipeline(model_name: str | None = None) -> None:
     raw_payload = [
         {
             "source": r.source,
+            "feed_url": r.feed_url,
             "url": r.url,
             "published_at": r.published_at,
             "fetched_at": r.fetched_at,
@@ -78,19 +85,40 @@ async def run_pipeline(model_name: str | None = None) -> None:
 
     print("Step 3/4: Building clean records...")
     clean_records = collect_rss_articles(feed_items)
-    clean_payload = [
-        {
-            "source": r.source.lower(),
-            "url": r.url,
-            "published_at": r.published_date,
-            "fetched_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "title_clean": r.title,
-            "summary_clean": r.summary,
-            "crypto": r.crypto,
-            "text_for_model": r.text_for_sentiment,
-        }
-        for r in clean_records
-    ]
+    fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    grouped_clean: dict[tuple, dict] = {}
+    for r in clean_records:
+        key = (
+            r.source.lower(),
+            r.url,
+            r.published_date,
+            r.title,
+            r.summary,
+            r.text_for_sentiment,
+        )
+        if key not in grouped_clean:
+            grouped_clean[key] = {
+                "source": r.source.lower(),
+                "url": r.url,
+                "published_at": r.published_date,
+                "fetched_at": fetched_at,
+                "title_clean": r.title,
+                "summary_clean": r.summary,
+                "text_for_model": r.text_for_sentiment,
+                "_cryptos": set(),
+            }
+        grouped_clean[key]["_cryptos"].add(r.crypto)
+
+    clean_payload = []
+    for item in grouped_clean.values():
+        cryptos = sorted(item.pop("_cryptos"))
+        clean_payload.append(
+            {
+                **item,
+                "cryptos": cryptos,
+                "dedupe_hash": stable_dedupe_hash(item["title_clean"], item["summary_clean"]),
+            }
+        )
     save_jsonl(clean_payload, clean_path)
     print(f"  Saved clean records: {len(clean_payload)} -> {clean_path}")
 

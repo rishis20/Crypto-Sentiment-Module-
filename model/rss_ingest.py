@@ -37,6 +37,7 @@ class RSSArticleRecord:
 @dataclass
 class RawRSSRecord:
     source: str
+    feed_url: str
     url: str
     published_at: str
     fetched_at: str
@@ -90,12 +91,12 @@ def extract_descriptions_from_raw_xml(raw_xml: str) -> Dict[int, str]:
     return descriptions
 
 
-def fetch_feed_items() -> List[Tuple[str, dict, str]]:
+def fetch_feed_items() -> List[Tuple[str, str, dict, str]]:
     """
-    Fetch RSS items. Returns list of (source, entry, original_description) tuples.
+    Fetch RSS items. Returns list of (source, feed_url, entry, original_description) tuples.
     original_description is from raw XML before feedparser normalization.
     """
-    items: List[Tuple[str, dict, str]] = []
+    items: List[Tuple[str, str, dict, str]] = []
     items_per_feed = max(MAX_ITEMS_PER_FEED * 3, 200)
     headers = {
         "User-Agent": (
@@ -131,7 +132,7 @@ def fetch_feed_items() -> List[Tuple[str, dict, str]]:
             for idx, entry in enumerate(parsed.entries[:items_per_feed]):
                 # Include original description from raw XML
                 original_desc = descriptions_map.get(idx, "")
-                items.append((source, entry, original_desc))
+                items.append((source, url, entry, original_desc))
             # Light delay to reduce throttling from providers.
             time.sleep(0.2)
     return items
@@ -195,13 +196,13 @@ def build_article_fields(entry: dict, original_description: str = "") -> Tuple[s
     return title, summary, content
 
 
-def collect_rss_articles(prefetched_items: List[Tuple[str, dict]] | None = None) -> List[RSSArticleRecord]:
+def collect_rss_articles(prefetched_items: List[Tuple[str, str, dict, str]] | None = None) -> List[RSSArticleRecord]:
     records: List[RSSArticleRecord] = []
     cutoff_date = (datetime.utcnow() - timedelta(days=MAX_DAYS_OLD)).date()
     seen = set()
 
     items = prefetched_items if prefetched_items is not None else fetch_feed_items()
-    for source, entry, original_description in items:
+    for source, _feed_url, entry, original_description in items:
         published_date = extract_published_date(entry)
         try:
             parsed_date = datetime.strptime(published_date, "%Y-%m-%d").date()
@@ -243,14 +244,15 @@ def collect_rss_articles(prefetched_items: List[Tuple[str, dict]] | None = None)
     return records
 
 
-def collect_raw_rss_records(prefetched_items: List[Tuple[str, dict]] | None = None) -> List[RawRSSRecord]:
+def collect_raw_rss_records(prefetched_items: List[Tuple[str, str, dict, str]] | None = None) -> List[RawRSSRecord]:
     records: List[RawRSSRecord] = []
     fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     items = prefetched_items if prefetched_items is not None else fetch_feed_items()
-    for source, entry, original_description in items:
+    for source, feed_url, entry, original_description in items:
         records.append(
             RawRSSRecord(
                 source=source.lower(),
+                feed_url=feed_url,
                 url=entry.get("link", "") or "",
                 published_at=extract_published_date(entry),
                 fetched_at=fetched_at,
