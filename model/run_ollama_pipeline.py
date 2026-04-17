@@ -9,15 +9,20 @@ Outputs:
 """
 
 import asyncio
-import hashlib
 import os
+import json
 from datetime import datetime, timezone
 import pandas as pd
 
-from analyze import OLLAMA_MODEL, analyze_text_sentiment
-from rss_ingest import collect_raw_rss_records, collect_rss_articles, fetch_feed_items, save_jsonl
-
-PROMPT_VERSION = "v1.0.0"
+from analyze import OLLAMA_MODEL, score_clean_rows
+from rss_ingest import (
+    build_clean_dataset,
+    collect_raw_rss_records,
+    fetch_feed_items,
+    save_jsonl,
+    MIN_ALPHA_RATIO,
+    MIN_CHAR_COUNT,
+)
 
 
 def ensure_dirs() -> dict:
@@ -31,35 +36,19 @@ def ensure_dirs() -> dict:
     return {"raw": raw_dir, "clean": clean_dir, "scored": scored_dir}
 
 
-def score_to_label(score: float) -> str:
-    if score <= -0.2:
-        return "bearish"
-    if score >= 0.2:
-        return "bullish"
-    return "neutral"
-
-
-def build_explanation(label: str, score: float) -> str:
-    if label == "bullish":
-        return f"Tone indicates positive market momentum (score {score:.3f})."
-    if label == "bearish":
-        return f"Tone indicates negative market pressure (score {score:.3f})."
-    return f"Signals are mixed or informational (score {score:.3f})."
-
-
-def stable_dedupe_hash(title_clean: str, summary_clean: str) -> str:
-    base = f"{title_clean.strip().lower()}||{summary_clean.strip().lower()}"
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()
-
-
 async def run_pipeline(model_name: str | None = None) -> None:
     model_to_use = model_name or OLLAMA_MODEL
     dirs = ensure_dirs()
     date_tag = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     raw_path = os.path.join(dirs["raw"], f"news_raw_{date_tag}.jsonl")
     clean_path = os.path.join(dirs["clean"], f"news_clean_{date_tag}.jsonl")
+    reject_path = os.path.join(dirs["clean"], f"news_rejected_{date_tag}.jsonl")
     scored_jsonl_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}.jsonl")
     scored_csv_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}.csv")
+    reports_dir = os.path.join("data", "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    stats_path = os.path.join(reports_dir, f"cleaning_stats_{date_tag}.json")
+    fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
     print("Step 1/4: Fetching RSS feeds (single pass)...")
     feed_items = fetch_feed_items()
@@ -84,79 +73,53 @@ async def run_pipeline(model_name: str | None = None) -> None:
     print(f"  Saved raw records: {len(raw_payload)} -> {raw_path}")
 
     print("Step 3/4: Building clean records...")
-    clean_records = collect_rss_articles(feed_items)
-    fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    grouped_clean: dict[tuple, dict] = {}
-    for r in clean_records:
-        key = (
-            r.source.lower(),
-            r.url,
-            r.published_date,
-            r.title,
-            r.summary,
-            r.text_for_sentiment,
-        )
-        if key not in grouped_clean:
-            grouped_clean[key] = {
-                "source": r.source.lower(),
-                "url": r.url,
-                "published_at": r.published_date,
-                "fetched_at": fetched_at,
-                "title_clean": r.title,
-                "summary_clean": r.summary,
-                "text_for_model": r.text_for_sentiment,
-                "_cryptos": set(),
-            }
-        grouped_clean[key]["_cryptos"].add(r.crypto)
-
-    clean_payload = []
-    for item in grouped_clean.values():
-        cryptos = sorted(item.pop("_cryptos"))
-        clean_payload.append(
-            {
-                **item,
-                "cryptos": cryptos,
-                "dedupe_hash": stable_dedupe_hash(item["title_clean"], item["summary_clean"]),
-            }
-        )
+    clean_payload, rejected_payload, clean_stats = build_clean_dataset(
+        prefetched_items=feed_items,
+        clean_dir=dirs["clean"],
+        fetched_at=fetched_at,
+    )
     save_jsonl(clean_payload, clean_path)
+    save_jsonl(rejected_payload, reject_path)
     print(f"  Saved clean records: {len(clean_payload)} -> {clean_path}")
+    print(f"  Saved rejected records: {len(rejected_payload)} -> {reject_path}")
 
-    if not clean_records:
+    if not clean_payload:
         print("No RSS records matched configured crypto keywords. Skipping scoring.")
         return
 
     print("Step 4/4: Scoring with Ollama...")
-    scored_payload = []
-    for item in clean_payload:
-        score = await analyze_text_sentiment(item["text_for_model"], model_to_use)
-        # Retry once if score is malformed/out of contract.
-        if not isinstance(score, (int, float)) or score < -1.0 or score > 1.0:
-            score = await analyze_text_sentiment(item["text_for_model"], model_to_use)
-        # Final contract enforcement.
-        if not isinstance(score, (int, float)):
-            score = 0.0
-        score = max(-1.0, min(1.0, float(score)))
-        label = score_to_label(score)
-        confidence = round(min(1.0, max(0.0, abs(score))), 3)
-        scored_payload.append(
-            {
-                **item,
-                "score": round(float(score), 6),
-                "label": label,
-                "confidence": confidence,
-                "explanation": build_explanation(label, float(score)),
-                "model_name": model_to_use,
-                "prompt_version": PROMPT_VERSION,
-                "scored_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            }
-        )
+    scored_payload = await score_clean_rows(clean_payload, model_to_use)
     save_jsonl(scored_payload, scored_jsonl_path)
     print(f"  Saved scored JSONL: {len(scored_payload)} -> {scored_jsonl_path}")
 
     print("Finalizing: Exporting CSV for comparison...")
     pd.DataFrame(scored_payload).to_csv(scored_csv_path, index=False)
     print(f"  Saved scored CSV: {scored_csv_path}")
+
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "date": date_tag,
+                "fetched_at": fetched_at,
+                "totals": {
+                    "raw_rows": len(raw_payload),
+                    "clean_rows": len(clean_payload),
+                    "rejected_rows": len(rejected_payload),
+                    "scored_rows": len(scored_payload),
+                },
+                "by_source": {
+                    "raw": clean_stats.get("by_source_raw", {}),
+                    "clean": clean_stats.get("by_source_clean", {}),
+                },
+                "reject_reason_counts": clean_stats.get("reject_reason_counts", {}),
+                "min_char_count": MIN_CHAR_COUNT,
+                "min_alpha_ratio": MIN_ALPHA_RATIO,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+    print(f"  Saved cleaning stats JSON: {stats_path}")
 
 
 if __name__ == "__main__":

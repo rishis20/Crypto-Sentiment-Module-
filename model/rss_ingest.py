@@ -9,10 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Tuple, Dict
 import csv
+import hashlib
 import json
+import os
 import re
 import time
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse, urlunparse
 
 import feedparser
 import requests
@@ -21,6 +24,40 @@ from bs4 import BeautifulSoup
 from config import CRYPTO_KEYWORDS, RSS_FEEDS, MAX_ITEMS_PER_FEED
 
 MAX_DAYS_OLD = 7
+MIN_CHAR_COUNT = 80
+MIN_ALPHA_RATIO = 0.60
+
+REDDIT_THREAD_PATTERNS = [
+    r"\bdaily crypto discussion\b",
+    r"\bweekly\b.*\bdiscussion\b",
+    r"\bmonthly\b.*\bdiscussion\b",
+]
+
+BOILERPLATE_PATTERNS = [
+    r"\bsubmitted by\s+/u/\w+",
+    r"\[link\]",
+    r"\[comments\]",
+    r"\bread more\b",
+    r"\bjoin (our )?discord\b",
+]
+
+IMAGE_ONLY_PATTERNS = [
+    r"^so real\.*$",
+]
+
+ENGLISH_HINT_WORDS = {
+    "the",
+    "and",
+    "is",
+    "are",
+    "to",
+    "of",
+    "in",
+    "for",
+    "with",
+    "on",
+    "from",
+}
 
 
 @dataclass
@@ -61,6 +98,13 @@ def normalize_text(text: str) -> str:
     return text
 
 
+def canonicalize_url(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
+
 def detect_cryptos(text: str) -> List[str]:
     text_norm = normalize_text(text)
     found: List[str] = []
@@ -70,6 +114,63 @@ def detect_cryptos(text: str) -> List[str]:
                 found.append(crypto)
                 break
     return found
+
+
+def remove_boilerplate(text: str) -> str:
+    cleaned = text or ""
+    for pattern in BOILERPLATE_PATTERNS:
+        cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def is_discussion_thread(title: str) -> bool:
+    title_norm = normalize_text(title)
+    return any(re.search(p, title_norm) for p in REDDIT_THREAD_PATTERNS)
+
+
+def looks_image_or_link_only(title: str, summary: str) -> bool:
+    title_norm = normalize_text(title)
+    summary_norm = normalize_text(summary)
+    if any(re.search(p, title_norm) for p in IMAGE_ONLY_PATTERNS):
+        return True
+    alpha_chars = len(re.findall(r"[a-zA-Z]", summary_norm))
+    return alpha_chars < 20
+
+
+def stable_dedupe_hash(title_clean: str, summary_clean: str) -> str:
+    basis = normalize_text(f"{title_clean} {summary_clean}")
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+
+def likely_english(text: str) -> bool:
+    text = text or ""
+    if not text.strip():
+        return False
+    alpha = len(re.findall(r"[A-Za-z]", text))
+    total = len(text)
+    if total == 0:
+        return False
+    alpha_ratio = alpha / total
+    words = set(normalize_text(text).split())
+    hint_hits = len(words.intersection(ENGLISH_HINT_WORDS))
+    return alpha_ratio >= MIN_ALPHA_RATIO and hint_hits >= 2
+
+
+def validate_clean_candidate(
+    source: str, title_clean: str, summary_clean: str, text_for_model: str, cryptos: List[str]
+) -> Tuple[bool, str]:
+    if source == "reddit" and is_discussion_thread(title_clean):
+        return False, "boilerplate_thread"
+    if source == "reddit" and looks_image_or_link_only(title_clean, summary_clean):
+        return False, "image_or_link_only"
+    if len(text_for_model) < MIN_CHAR_COUNT:
+        return False, "too_short"
+    if not likely_english(text_for_model):
+        return False, "non_english_or_garbled"
+    if not cryptos:
+        return False, "non_crypto_after_clean"
+    return True, "accepted"
 
 
 def extract_descriptions_from_raw_xml(raw_xml: str) -> Dict[int, str]:
@@ -262,6 +363,147 @@ def collect_raw_rss_records(prefetched_items: List[Tuple[str, str, dict, str]] |
             )
         )
     return records
+
+
+def load_seen_hashes(clean_dir: str) -> set[str]:
+    seen_hashes: set[str] = set()
+    try:
+        for name in os.listdir(clean_dir):
+            if not name.startswith("news_clean_") or not name.endswith(".jsonl"):
+                continue
+            prior_path = os.path.join(clean_dir, name)
+            with open(prior_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    dedupe_hash = row.get("dedupe_hash")
+                    if dedupe_hash:
+                        seen_hashes.add(dedupe_hash)
+    except FileNotFoundError:
+        pass
+    return seen_hashes
+
+
+def build_clean_dataset(
+    prefetched_items: List[Tuple[str, str, dict, str]] | None = None,
+    clean_dir: str | None = None,
+    fetched_at: str | None = None,
+) -> Tuple[List[dict], List[dict], Dict[str, Dict[str, int] | int | Dict[str, int]]]:
+    items = prefetched_items if prefetched_items is not None else fetch_feed_items()
+    cutoff_date = (datetime.utcnow() - timedelta(days=MAX_DAYS_OLD)).date()
+    fetched_at_value = fetched_at or datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+    seen_hashes: set[str] = set()
+    if clean_dir:
+        seen_hashes = load_seen_hashes(clean_dir)
+
+    clean_rows: List[dict] = []
+    rejected_rows: List[dict] = []
+    source_raw_counts: Dict[str, int] = {}
+    source_clean_counts: Dict[str, int] = {}
+    reject_reason_counts: Dict[str, int] = {}
+
+    for source, _feed_url, entry, original_description in items:
+        source_key = source.lower()
+        source_raw_counts[source_key] = source_raw_counts.get(source_key, 0) + 1
+        published_at = extract_published_date(entry)
+        url = entry.get("link", "") or ""
+        canonical_url = canonicalize_url(url)
+
+        try:
+            parsed_date = datetime.strptime(published_at, "%Y-%m-%d").date()
+        except ValueError:
+            rejected_rows.append(
+                {
+                    "source": source_key,
+                    "url": canonical_url or url,
+                    "published_at": published_at,
+                    "reject_reason": "invalid_date",
+                }
+            )
+            reject_reason_counts["invalid_date"] = reject_reason_counts.get("invalid_date", 0) + 1
+            continue
+        if parsed_date < cutoff_date:
+            rejected_rows.append(
+                {
+                    "source": source_key,
+                    "url": canonical_url or url,
+                    "published_at": published_at,
+                    "reject_reason": "outside_date_window",
+                }
+            )
+            reject_reason_counts["outside_date_window"] = reject_reason_counts.get("outside_date_window", 0) + 1
+            continue
+
+        title_clean, summary_clean, _content_clean = build_article_fields(entry, original_description)
+        title_clean = remove_boilerplate(title_clean)
+        summary_clean = remove_boilerplate(summary_clean)
+        text_for_model = f"{title_clean}\n\n{summary_clean}".strip()
+
+        cryptos = detect_cryptos(text_for_model)
+        is_valid, reason = validate_clean_candidate(
+            source_key, title_clean, summary_clean, text_for_model, cryptos
+        )
+        if not is_valid:
+            rejected_rows.append(
+                {
+                    "source": source_key,
+                    "url": canonical_url or url,
+                    "published_at": published_at,
+                    "title_clean": title_clean,
+                    "summary_clean": summary_clean,
+                    "reject_reason": reason,
+                }
+            )
+            reject_reason_counts[reason] = reject_reason_counts.get(reason, 0) + 1
+            continue
+
+        dedupe_hash = stable_dedupe_hash(title_clean, summary_clean)
+        if dedupe_hash in seen_hashes:
+            rejected_rows.append(
+                {
+                    "source": source_key,
+                    "url": canonical_url or url,
+                    "published_at": published_at,
+                    "title_clean": title_clean,
+                    "summary_clean": summary_clean,
+                    "reject_reason": "duplicate",
+                    "dedupe_hash": dedupe_hash,
+                }
+            )
+            reject_reason_counts["duplicate"] = reject_reason_counts.get("duplicate", 0) + 1
+            continue
+        seen_hashes.add(dedupe_hash)
+
+        source_clean_counts[source_key] = source_clean_counts.get(source_key, 0) + 1
+        clean_rows.append(
+            {
+                "source": source_key,
+                "url": canonical_url or url,
+                "published_at": published_at,
+                "fetched_at": fetched_at_value,
+                "title_clean": title_clean,
+                "summary_clean": summary_clean,
+                "text_for_model": text_for_model,
+                "cryptos": cryptos,
+                "dedupe_hash": dedupe_hash,
+            }
+        )
+
+    stats: Dict[str, Dict[str, int] | int | Dict[str, int]] = {
+        "raw_rows": len(items),
+        "clean_rows": len(clean_rows),
+        "rejected_rows": len(rejected_rows),
+        "by_source_raw": source_raw_counts,
+        "by_source_clean": source_clean_counts,
+        "reject_reason_counts": reject_reason_counts,
+    }
+    return clean_rows, rejected_rows, stats
 
 
 def save_to_csv(records: List[RSSArticleRecord], path: str = "rss_articles.csv") -> None:
