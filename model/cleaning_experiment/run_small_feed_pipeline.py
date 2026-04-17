@@ -6,11 +6,13 @@ Writes separate artifacts:
 - data/clean/news_clean_YYYY-MM-DD.jsonl
 """
 
+import asyncio
 from datetime import datetime, timedelta
 import hashlib
 import json
 import os
 import re
+import sys
 import time
 from urllib.parse import urlparse, urlunparse
 
@@ -22,6 +24,7 @@ from pilot_config import CRYPTO_KEYWORDS, PILOT_RSS_FEEDS, MAX_ITEMS_PER_FEED, M
 
 MIN_CHAR_COUNT = 80
 MIN_ALPHA_RATIO = 0.60
+PROMPT_VERSION = "cleaning_experiment_v1.0.0"
 
 REDDIT_THREAD_PATTERNS = [
     r"\bdaily crypto discussion\b",
@@ -54,6 +57,13 @@ ENGLISH_HINT_WORDS = {
     "on",
     "from",
 }
+
+# Reuse the existing Ollama scoring logic from parent model/analyze.py
+PARENT_MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PARENT_MODEL_DIR not in sys.path:
+    sys.path.insert(0, PARENT_MODEL_DIR)
+
+from analyze import OLLAMA_MODEL, analyze_text_sentiment  # noqa: E402
 
 
 def clean_html(text: str) -> str:
@@ -167,6 +177,57 @@ def validate_clean_candidate(
     return True, "accepted"
 
 
+def score_to_label(score: float) -> str:
+    if score <= -0.2:
+        return "bearish"
+    if score >= 0.2:
+        return "bullish"
+    return "neutral"
+
+
+def build_explanation(label: str, score: float) -> str:
+    if label == "bullish":
+        return f"Tone indicates positive market momentum (score {score:.3f})."
+    if label == "bearish":
+        return f"Tone indicates negative market pressure (score {score:.3f})."
+    return f"Signals are mixed or informational (score {score:.3f})."
+
+
+async def score_clean_rows(clean_rows: list[dict], model_name: str | None = None) -> list[dict]:
+    model_to_use = model_name or OLLAMA_MODEL
+    scored_rows = []
+
+    for row in clean_rows:
+        text = row.get("text_for_model", "")
+        score = await analyze_text_sentiment(text, model_to_use)
+
+        # Retry once if malformed/out-of-range.
+        if not isinstance(score, (int, float)) or score < -1.0 or score > 1.0:
+            score = await analyze_text_sentiment(text, model_to_use)
+
+        # Enforce output contract.
+        if not isinstance(score, (int, float)):
+            score = 0.0
+        score = max(-1.0, min(1.0, float(score)))
+        label = score_to_label(score)
+        confidence = round(min(1.0, max(0.0, abs(score))), 3)
+
+        scored_rows.append(
+            {
+                **row,
+                "score": round(score, 6),
+                "label": label,
+                "confidence": confidence,
+                "explanation": build_explanation(label, score),
+                "model_name": model_to_use,
+                "prompt_version": PROMPT_VERSION,
+                "scored_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            }
+        )
+
+    return scored_rows
+
+
 def fetch_feed_items() -> list[tuple[str, str, dict]]:
     items: list[tuple[str, str, dict]] = []
     headers = {
@@ -212,9 +273,11 @@ def run() -> None:
     base_dir = os.path.dirname(__file__)
     raw_dir = os.path.join(base_dir, "data", "raw")
     clean_dir = os.path.join(base_dir, "data", "clean")
+    scored_dir = os.path.join(base_dir, "data", "scored")
     reports_dir = os.path.join(base_dir, "data", "reports")
     os.makedirs(raw_dir, exist_ok=True)
     os.makedirs(clean_dir, exist_ok=True)
+    os.makedirs(scored_dir, exist_ok=True)
     os.makedirs(reports_dir, exist_ok=True)
 
     date_tag = datetime.utcnow().strftime("%Y-%m-%d")
@@ -222,6 +285,8 @@ def run() -> None:
     raw_path = os.path.join(raw_dir, f"news_raw_{date_tag}.jsonl")
     clean_path = os.path.join(clean_dir, f"news_clean_{date_tag}.jsonl")
     reject_path = os.path.join(clean_dir, f"news_rejected_{date_tag}.jsonl")
+    scored_jsonl_path = os.path.join(scored_dir, f"sentiment_{date_tag}.jsonl")
+    scored_csv_path = os.path.join(scored_dir, f"sentiment_{date_tag}.csv")
     stats_path = os.path.join(reports_dir, f"cleaning_stats_{date_tag}.json")
 
     items = fetch_feed_items()
@@ -363,6 +428,19 @@ def run() -> None:
     write_jsonl(raw_path, raw_rows)
     write_jsonl(clean_path, clean_rows)
     write_jsonl(reject_path, rejected_rows)
+
+    scored_rows: list[dict] = []
+    if clean_rows:
+        print("Scoring clean rows with Ollama...")
+        scored_rows = asyncio.run(score_clean_rows(clean_rows))
+        write_jsonl(scored_jsonl_path, scored_rows)
+        # CSV export for comparison/reporting convenience.
+        import csv
+
+        with open(scored_csv_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(scored_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(scored_rows)
     with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(
             {
@@ -372,6 +450,7 @@ def run() -> None:
                     "raw_rows": len(raw_rows),
                     "clean_rows": len(clean_rows),
                     "rejected_rows": len(rejected_rows),
+                    "scored_rows": len(scored_rows),
                 },
                 "by_source": {
                     "raw": source_raw_counts,
@@ -389,6 +468,9 @@ def run() -> None:
     print(f"Saved raw JSONL: {len(raw_rows)} -> {raw_path}")
     print(f"Saved clean JSONL: {len(clean_rows)} -> {clean_path}")
     print(f"Saved rejected JSONL: {len(rejected_rows)} -> {reject_path}")
+    if scored_rows:
+        print(f"Saved scored JSONL: {len(scored_rows)} -> {scored_jsonl_path}")
+        print(f"Saved scored CSV: {scored_csv_path}")
     print(f"Saved stats JSON: {stats_path}")
 
 

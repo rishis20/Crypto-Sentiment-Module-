@@ -40,6 +40,10 @@ The script writes:
   - Cleaned records that pass validation and are ready for model scoring.
 - `data/clean/news_rejected_YYYY-MM-DD.jsonl`
   - Rejected records with `reject_reason`.
+- `data/scored/sentiment_YYYY-MM-DD.jsonl`
+  - Ollama-scored records with `score`, `label`, `confidence`, `explanation`.
+- `data/scored/sentiment_YYYY-MM-DD.csv`
+  - CSV export of scored JSONL for comparison/reporting.
 - `data/reports/cleaning_stats_YYYY-MM-DD.json`
   - Summary counts by source and reject reason.
 
@@ -133,6 +137,22 @@ Common reasons:
 Why:
 - Makes preprocessing transparent and auditable.
 - Enables targeted rule tuning instead of guesswork.
+
+### 9) Scoring contract in experiment pipeline
+
+Technique:
+- Score each clean record using Ollama via parent `analyze.py` function (`analyze_text_sentiment`).
+- Retry once if score is malformed/out-of-range.
+- Enforce final score contract: clamp to `[-1, 1]`.
+- Derive:
+  - `label` (`bearish`, `neutral`, `bullish`) using thresholds
+  - `confidence` from score magnitude
+  - short `explanation`
+- Persist scoring metadata (`model_name`, `prompt_version`, `scored_at`).
+
+Why:
+- Ensures the experiment pipeline is directly testable end-to-end against the production scoring approach.
+- Keeps score schema stable for evaluation and report generation.
 
 ## Source-by-source justification summary
 
@@ -260,6 +280,33 @@ plt.figure(figsize=(8,4))
 plt.hist(lengths, bins=20)
 plt.title("Distribution of text_for_model length (chars)")
 plt.xlabel("characters")
+plt.ylabel("count")
+plt.tight_layout()
+plt.show()
+PY
+```
+
+### D) Score distribution (scored set)
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+scored_files = sorted(Path("data/scored").glob("sentiment_*.jsonl"))
+latest = scored_files[-1]
+scores = []
+for line in latest.read_text(encoding="utf-8").splitlines():
+    if not line.strip():
+        continue
+    row = json.loads(line)
+    scores.append(float(row.get("score", 0.0)))
+
+plt.figure(figsize=(8,4))
+plt.hist(scores, bins=25)
+plt.title("Score distribution (Ollama)")
+plt.xlabel("score")
 plt.ylabel("count")
 plt.tight_layout()
 plt.show()
