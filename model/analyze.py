@@ -10,6 +10,7 @@ import httpx
 import json
 import re
 import os
+from datetime import datetime
 import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
@@ -26,6 +27,7 @@ app = FastAPI(
 # Configuration
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")  # Default model, can be changed
+PROMPT_VERSION = "v1.1.0"
 
 
 class SentimentRequest(BaseModel):
@@ -263,6 +265,55 @@ async def analyze_text_sentiment(text: str, model_name: Optional[str] = None) ->
     except Exception as e:
         print(f"Error analyzing sentiment for text: {str(e)}")
         return 0.0
+
+
+def score_to_label(score: float) -> str:
+    if score <= -0.2:
+        return "bearish"
+    if score >= 0.2:
+        return "bullish"
+    return "neutral"
+
+
+def build_explanation(label: str, score: float) -> str:
+    if label == "bullish":
+        return f"Tone indicates positive market momentum (score {score:.3f})."
+    if label == "bearish":
+        return f"Tone indicates negative market pressure (score {score:.3f})."
+    return f"Signals are mixed or informational (score {score:.3f})."
+
+
+async def analyze_text_sentiment_robust(text: str, model_name: Optional[str] = None) -> float:
+    model_to_use = model_name or OLLAMA_MODEL
+    score = await analyze_text_sentiment(text, model_to_use)
+    if not isinstance(score, (int, float)) or score < -1.0 or score > 1.0:
+        score = await analyze_text_sentiment(text, model_to_use)
+    if not isinstance(score, (int, float)):
+        score = 0.0
+    return max(-1.0, min(1.0, float(score)))
+
+
+async def score_clean_rows(clean_rows: list[dict], model_name: Optional[str] = None) -> list[dict]:
+    model_to_use = model_name or OLLAMA_MODEL
+    scored_rows: list[dict] = []
+    for row in clean_rows:
+        text = row.get("text_for_model", "")
+        score = await analyze_text_sentiment_robust(text, model_to_use)
+        label = score_to_label(score)
+        confidence = round(min(1.0, max(0.0, abs(score))), 3)
+        scored_rows.append(
+            {
+                **row,
+                "score": round(score, 6),
+                "label": label,
+                "confidence": confidence,
+                "explanation": build_explanation(label, score),
+                "model_name": model_to_use,
+                "prompt_version": PROMPT_VERSION,
+                "scored_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            }
+        )
+    return scored_rows
 
 
 async def process_csv_file(csv_file_path: str, output_path: Optional[str] = None, model_name: Optional[str] = None) -> str:
