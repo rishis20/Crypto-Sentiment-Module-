@@ -1,476 +1,82 @@
-# Sentiment Analysis API using Ollama
+# Crypto Sentiment Module (Local Python Pipeline)
 
-A FastAPI-based sentiment analysis service that uses Ollama LLM models to generate sentiment scores from text. Perfect for analyzing financial news, social media posts, and other text content for trading and investment decisions.
+This project runs a local Python pipeline that collects crypto-related RSS items, cleans and filters records, scores sentiment with Ollama, and saves results to JSONL/CSV files.
 
-## Features
+## What this project does
 
-- **LLM-powered sentiment analysis** using Ollama models
-- **Sentiment scores** ranging from -1.0 (very negative) to 1.0 (very positive)
-- **Automatic labeling** (positive, negative, or neutral)
-- **Async API** built with FastAPI for high performance
-- **Configurable** model selection and Ollama server URL
-- **Robust error handling** for connection issues and timeouts
-- **RSS ingestion + preprocessing pipeline** with reject tracking and dedupe
-- **JSONL-first artifacts** (`raw`, `clean`, `rejected`, `scored`) plus CSV export
-- **Interactive API documentation** via FastAPI's Swagger UI
-
-## Quick start (first time)
-
-1. **Download Ollama, then pull the llama3.2 model** (one-time) → see [Setting up Ollama (for the team)](#setting-up-ollama-for-the-team) below.
-2. **Install Python dependencies** (from project root): `pip install -r requirements.txt`
-3. **Run the API** from the `model` folder: `cd "model"` then `python analyze.py`
-4. Open **http://localhost:8000/docs** to try the API.
+- Fetches RSS content from configured crypto news/community feeds
+- Builds raw and cleaned datasets with reject reasons
+- Deduplicates records using a stable hash
+- Scores cleaned text with an Ollama model
+- Exports scored output to JSONL and CSV
 
 ## Prerequisites
 
-- **Python 3.8+** (3.12 or 3.13 recommended; 3.14 supported with current `requirements.txt`)
-- **Ollama** installed and running, with the **llama3.2** model pulled (see below)
+- Python 3.8+
+- Ollama installed on your machine
+- A local Ollama model pulled (default: `llama3.2`)
 
-## Setting up Ollama (for the team)
+## Setup
 
-1. **Download and install Ollama**, then 2. **pull the llama3.2 model**. Everyone on the team does this once per machine. No API key or account is required.
-
-### Step 1: Download and install Ollama
-
-- **macOS / Windows / Linux:** Download the installer from **[https://ollama.ai](https://ollama.ai)** and run it.
-- **macOS (Homebrew):** `brew install ollama`
-- **Linux (script):** `curl -fsSL https://ollama.com/install.sh | sh`
-
-After installation, the Ollama app may start automatically (e.g. on macOS/Windows). If not, you’ll start it in Step 2.
-
-### Step 2: Start the Ollama server
-
-You need the Ollama server running whenever you use the Sentiment API.
-
-- **If you use the Ollama desktop app:** Open the app and leave it running (it starts the server for you).
-- **From the terminal (any OS):**
-  ```bash
-  ollama serve
-  ```
-  Leave this terminal open. Use a second terminal for the rest of the steps.
-
-### Step 3: Download the llama3.2 model
-
-The Sentiment API uses **llama3.2** by default. Pull it once (first time will download the model):
-
-```bash
-ollama pull llama3.2
-```
-
-For a smaller/faster option (less accurate):
-
-```bash
-ollama pull llama3.2:1b
-```
-
-List installed models anytime:
-
-```bash
-ollama list
-```
-
-### Step 4: Verify Ollama is working
-
-In a terminal:
-
-```bash
-curl http://localhost:11434/api/tags
-```
-
-You should see JSON listing your models. If you get “connection refused” or no response, Ollama isn’t running — repeat Step 2.
-
----
-
-Once this works, you can [install Python dependencies](#installation) and [run the Sentiment API](#usage).
-
-## Project structure
-
-- **Project root** (`Crypto-Sentiment-Module-/`): contains `README.md` and `requirements.txt`
-- **`model/`**: contains the API and scripts
-  - `analyze.py` — FastAPI sentiment API (Ollama)
-  - `rss_ingest.py` — RSS fetch + preprocessing + clean/reject dataset helpers
-  - `run_ollama_pipeline.py` — end-to-end RSS -> clean -> Ollama scoring pipeline
-  - `example_usage.py` — example client for the API
-
-## Installation
-
-Do this **after** [Ollama is set up](#setting-up-ollama-for-the-team) and the Ollama server is running.
-
-1. **Navigate to the project root** (the folder that contains `requirements.txt` and `model`):
+1. Install Ollama:
+   - Download from [https://ollama.ai](https://ollama.ai), or
+   - Use Homebrew: `brew install ollama`
+2. Start Ollama:
    ```bash
-   cd /path/to/Crypto-Sentiment-Module-
+   ollama serve
    ```
-
-2. **Create a virtual environment (recommended for the team):**
+3. Pull model:
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate   # macOS/Linux
-   # On Windows: venv\Scripts\activate
+   ollama pull llama3.2
    ```
-
-3. **Install Python dependencies** (from project root):
+4. Install Python dependencies from project root:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Verify Ollama is running** (in another terminal, with Ollama started):
-   ```bash
-   curl http://localhost:11434/api/tags
-   ```
-   You should see JSON listing your models. If not, see [Setting up Ollama](#setting-up-ollama-for-the-team) and [Troubleshooting](#troubleshooting).
+## Run the pipeline
 
-## Configuration
-
-Create a `.env` file in the **`model`** directory (optional), or in the project root if you run the server from there:
-
-```env
-# Ollama server URL (default: http://localhost:11434)
-OLLAMA_BASE_URL=http://localhost:11434
-
-# Default Ollama model to use (default: llama3.2)
-OLLAMA_MODEL=llama3.2
-
-# API server port (default: 8000)
-SENTIMENT_API_PORT=8000
-```
-
-If no `.env` file is provided, the defaults above will be used.
-
-## Usage
-
-### Starting the API Server
-
-Run the server from the **`model`** directory so `analyze.py` and `.env` are found:
-
-```bash
-cd "model"
-```
-
-**Option 1: Using Python directly**
-```bash
-python analyze.py
-```
-
-**Option 2: Using uvicorn**
-```bash
-uvicorn analyze:app --host 0.0.0.0 --port 8000 --reload
-```
-
-The API will start on `http://localhost:8000` (or your configured port).
-
-### RSS to Ollama pipeline (local, no database)
-
-This project also supports a local file-based pipeline:
-1) collect RSS entries,
-2) write raw snapshot JSONL,
-3) clean and validate records for model input,
-4) score clean records with Ollama,
-5) export JSONL + CSV outputs.
-
-Run from the **`model`** directory:
+From the `model` directory:
 
 ```bash
 cd "model"
 python run_ollama_pipeline.py
 ```
 
-Generated files:
-- `data/raw/news_raw_YYYY-MM-DD.jsonl` (raw snapshot records)
-- `data/clean/news_clean_YYYY-MM-DD.jsonl` (clean records for model input)
-- `data/clean/news_rejected_YYYY-MM-DD.jsonl` (rejected records with reject reasons)
-- `data/scored/sentiment_YYYY-MM-DD.jsonl` (scored records, includes model metadata)
-- `data/scored/sentiment_YYYY-MM-DD.csv` (CSV export for comparison)
-- `data/reports/cleaning_stats_YYYY-MM-DD.json` (counts by source and reject reason)
-
-Pipeline preprocessing/scoring notes:
-- Canonical URL normalization for better duplicate control
-- Boilerplate cleanup and source-aware filters (including Reddit thread/link-image filtering)
-- Quality gates (minimum length, likely-English check, crypto relevance)
-- Deterministic `dedupe_hash` with cross-run dedupe against prior clean artifacts
-- Robust scoring contract: retry once on malformed score, then clamp to `[-1, 1]`
-
-Optional: override the scoring model for the pipeline run:
-
-```bash
-PIPELINE_OLLAMA_MODEL=llama3.2 python run_ollama_pipeline.py
-```
-
-### Accessing API Documentation
-
-Once the server is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## API Endpoints
-
-### 1. Analyze Sentiment
-
-**POST** `/analyze`
-
-Analyzes the sentiment of given text and returns a sentiment score.
-
-**Request Body:**
-```json
-{
-  "text": "This is great news for the cryptocurrency market!",
-  "model": "llama3.2"  // optional, uses default if not provided
-}
-```
-
-**Response:**
-```json
-{
-  "text": "This is great news for the cryptocurrency market!",
-  "sentiment_score": 0.75,
-  "sentiment_label": "positive",
-  "model_used": "llama3.2",
-  "confidence": 0.85
-}
-```
-
-**Response Fields:**
-- `text`: The original input text
-- `sentiment_score`: Float from -1.0 (very negative) to 1.0 (very positive)
-- `sentiment_label`: One of "positive", "negative", or "neutral"
-- `model_used`: The Ollama model that was used
-- `confidence`: Optional confidence score (0.0 to 1.0)
-
-### 2. Health Check
-
-**GET** `/health`
-
-Checks the health status of the API and Ollama connection.
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "ollama": "connected",
-  "ollama_url": "http://localhost:11434"
-}
-```
-
-### 3. List Available Models
-
-**GET** `/models`
-
-Returns a list of available Ollama models.
-
-**Response:**
-```json
-{
-  "models": ["llama3.2", "mistral", "codellama"],
-  "default_model": "llama3.2"
-}
-```
-
-## Examples
-
-### Using cURL
-
-**Analyze sentiment:**
-```bash
-curl -X POST "http://localhost:8000/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Bitcoin price dropped 10% today, investors are worried."
-  }'
-```
-
-**With custom model:**
-```bash
-curl -X POST "http://localhost:8000/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "The new blockchain technology shows promising potential.",
-    "model": "mistral"
-  }'
-```
-
-**Health check:**
-```bash
-curl http://localhost:8000/health
-```
-
-**List models:**
-```bash
-curl http://localhost:8000/models
-```
-
-### Using Python
-
-```python
-import requests
-
-# Analyze sentiment
-response = requests.post(
-    "http://localhost:8000/analyze",
-    json={
-        "text": "Ethereum upgrade successfully deployed!",
-        "model": "llama3.2"
-    }
-)
-
-result = response.json()
-print(f"Sentiment: {result['sentiment_label']}")
-print(f"Score: {result['sentiment_score']}")
-```
-
-### Using JavaScript/Node.js
-
-```javascript
-const response = await fetch('http://localhost:8000/analyze', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    text: 'Market sentiment is bullish today!',
-    model: 'llama3.2'
-  })
-});
-
-const result = await response.json();
-console.log(`Sentiment: ${result.sentiment_label}`);
-console.log(`Score: ${result.sentiment_score}`);
-```
-
-## Sentiment Score Interpretation
-
-| Score Range | Label | Interpretation |
-|------------|-------|----------------|
-| > 0.2 | Positive | Generally positive sentiment |
-| -0.2 to 0.2 | Neutral | Mixed or neutral sentiment |
-| < -0.2 | Negative | Generally negative sentiment |
-
-## Error Handling
-
-The API handles various error scenarios:
-
-### Connection Error (503)
-```json
-{
-  "detail": "Cannot connect to Ollama server at http://localhost:11434. Please ensure Ollama is running."
-}
-```
-**Solution:** Make sure Ollama is running: `ollama serve`
-
-### Timeout Error (504)
-```json
-{
-  "detail": "Request to Ollama timed out. The model may be too slow or unavailable."
-}
-```
-**Solution:** Try a smaller/faster model or increase timeout settings
-
-### Model Not Found (404)
-```json
-{
-  "detail": "Ollama API error: model not found"
-}
-```
-**Solution:** Download the model first: `ollama pull <model-name>`
-
-### Invalid Request (422)
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "text"],
-      "msg": "ensure this value has at least 1 characters",
-      "type": "value_error.any_str.min_length"
-    }
-  ]
-}
-```
-**Solution:** Ensure the request body contains a non-empty `text` field
-
-## Integration with Express Backend
-
-To integrate this API with your Express.js backend, you can call it from your Node.js routes:
-
-```javascript
-// In your Express route file
-const axios = require('axios');
-
-async function analyzeSentiment(text) {
-  try {
-    const response = await axios.post('http://localhost:8000/analyze', {
-      text: text,
-      model: 'llama3.2'
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Sentiment analysis error:', error.message);
-    throw error;
-  }
-}
-
-// Use in a route
-router.post('/api/sentiment/analyze', async (req, res) => {
-  try {
-    const { text } = req.body;
-    const result = await analyzeSentiment(text);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to analyze sentiment' });
-  }
-});
-```
-
-## Troubleshooting
-
-### Ollama connection issues
-
-If the API returns “Cannot connect to Ollama” or similar:
-
-1. **Confirm Ollama is running** — In a terminal: `curl http://localhost:11434/api/tags`. You should get JSON. If you get “connection refused,” start Ollama (see [Setting up Ollama](#setting-up-ollama-for-the-team)).
-2. **Start the server** (if not using the desktop app): `ollama serve` (leave it running).
-3. **Check that a model is installed:** `ollama list`. If none are listed, run: `ollama pull llama3.2`.
-4. **Same machine?** The API talks to `http://localhost:11434` by default. If Ollama runs on another machine, set `OLLAMA_BASE_URL` in your `.env` to that host (e.g. `http://other-pc:11434`).
-
-### API Server Issues
-
-1. **Check if port is already in use:**
-   ```bash
-   lsof -i :8000
-   ```
-
-2. **View API logs** in the terminal where the server is running
-
-3. **Check environment variables** are set correctly in `.env` (in `model/` or project root)
-
-## Performance Considerations
-
-- **Model Selection**: Larger models (e.g., `llama3.2`) provide better accuracy but are slower. Smaller models are faster but may be less accurate.
-- **Concurrent Requests**: FastAPI handles multiple requests concurrently using async/await.
-- **Caching**: Consider implementing response caching for repeated analyses of the same text.
-- **Timeout**: Default timeout is 30 seconds. Adjust based on your model's speed.
-
-## Development
-
-### Running in Development Mode
-
-From the **`model`** directory:
+Optional model override:
 
 ```bash
 cd "model"
-uvicorn analyze:app --host 0.0.0.0 --port 8000 --reload
+PIPELINE_OLLAMA_MODEL=llama3.2 python run_ollama_pipeline.py
 ```
 
-The `--reload` flag enables auto-reload on code changes.
+## Outputs
 
-### Testing
+Each run generates date-based files in `model/data`:
 
-Test the API endpoints using the interactive docs at http://localhost:8000/docs or use curl/Postman.
+- `raw/news_raw_YYYY-MM-DD.jsonl`
+- `clean/news_clean_YYYY-MM-DD.jsonl`
+- `clean/news_rejected_YYYY-MM-DD.jsonl`
+- `scored/sentiment_YYYY-MM-DD.jsonl`
+- `scored/sentiment_YYYY-MM-DD.csv`
+- `reports/cleaning_stats_YYYY-MM-DD.json`
 
-## License
+## Project structure
 
-This module is part of the Blocktrade project.
+- `README.md` - project overview and usage
+- `requirements.txt` - Python dependencies
+- `model/config.py` - keyword/feed configuration
+- `model/rss_ingest.py` - RSS fetch + clean/filter logic
+- `model/analyze.py` - Ollama scoring helpers used by pipeline
+- `model/run_ollama_pipeline.py` - end-to-end local run script
 
-## Support
+## Configuration notes
 
-For issues or questions:
-1. Check the [Ollama documentation](https://github.com/ollama/ollama)
-2. Review error messages in the API responses
-3. Check server logs for detailed error information
+- `config.py` controls RSS sources and keyword matching.
+- `PIPELINE_OLLAMA_MODEL` can override the default model for a single run.
+
+## Troubleshooting
+
+- If Ollama is not reachable, ensure `ollama serve` is running.
+- If model is missing, run `ollama pull llama3.2`.
+- If output looks empty, check the reject file and `cleaning_stats` report for filtering reasons.
