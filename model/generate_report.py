@@ -594,17 +594,9 @@ def build_pdf(data, charts, output_path):
     c.save()
     print(f"[✓] Report saved → {output_path}")
 
-# ─── Entry point ─────────────────────────────────────────────────────────────
-
-def main():
-    parser = argparse.ArgumentParser(description="Generate crypto sentiment PDF report")
-    parser.add_argument("--input",  "-i", required=True, help="Path to .jsonl sentiment file")
-    parser.add_argument("--output", "-o", default="crypto_sentiment_report.pdf",
-                        help="Output PDF path (default: crypto_sentiment_report.pdf)")
-    args = parser.parse_args()
-
-    print(f"[→] Loading {args.input}…")
-    records = load_data(args.input)
+def export_pdf(input_path, output_path):
+    print(f"[→] Loading {input_path}…")
+    records = load_data(input_path)
     if not records:
         print("Error: no records found in input file.", file=sys.stderr)
         sys.exit(1)
@@ -622,7 +614,39 @@ def main():
     }
 
     print("[→] Building PDF…")
-    build_pdf(data, charts, args.output)
+    build_pdf(data, charts, output_path)
+
+# ─── Entry point ─────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate crypto sentiment PDF report")
+    parser.add_argument("--input",  "-i", required=True, help="Path to .jsonl sentiment file")
+    parser.add_argument("--output", "-o", default="crypto_sentiment_report.pdf",
+                        help="Output PDF path (default: crypto_sentiment_report.pdf)")
+    args = parser.parse_args()
+    export_pdf(args.input, args.output)
+
+    # print(f"[→] Loading {args.input}…")
+    # records = load_data(args.input)
+    # if not records:
+    #     print("Error: no records found in input file.", file=sys.stderr)
+    #     sys.exit(1)
+    # print(f"[→] {len(records)} articles loaded.")
+
+    # data = analyse(records)
+    # print(f"[→] Overall score: {data['overall']:+.3f}  |  signal: {label_signal(data['overall'])[0]}")
+
+    # print("[→] Rendering charts…")
+    # charts = {
+    #     "gauge":       make_gauge(data["overall"]),
+    #     "donut":       make_donut(data["dist"]),
+    #     "source_bars": make_source_bars(data["sources"]),
+    #     "crypto_bars": make_crypto_bars(data["cryptos"]),
+    # }
+
+    # print("[→] Building PDF…")
+    # build_pdf(data, charts, args.output)
+
 
 if __name__ == "__main__":
     main()
