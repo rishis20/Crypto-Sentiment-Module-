@@ -14,6 +14,7 @@ from datetime import datetime
 import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -263,7 +264,12 @@ async def analyze_text_sentiment(text: str, model_name: Optional[str] = None) ->
         return sentiment_score
         
     except Exception as e:
-        print(f"Error analyzing sentiment for text: {str(e)}")
+        print(f"\n Error analyzing sentiment for text:")
+        print(f"   Model: {model_to_use}")
+        print(f"   Error type: {type(e).__name__}")
+        print(f"   Error message: {str(e)}")
+        print(f"   Full traceback:")
+        traceback.print_exc()
         return 0.0
 
 

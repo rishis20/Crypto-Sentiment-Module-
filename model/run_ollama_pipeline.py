@@ -23,6 +23,7 @@ from rss_ingest import (
     MIN_ALPHA_RATIO,
     MIN_CHAR_COUNT,
 )
+from generate_report import export_pdf
 
 
 def ensure_dirs() -> dict:
@@ -49,12 +50,13 @@ async def run_pipeline(model_name: str | None = None) -> None:
     os.makedirs(reports_dir, exist_ok=True)
     stats_path = os.path.join(reports_dir, f"cleaning_stats_{date_tag}.json")
     fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    pdf_report_path = os.path.join(reports_dir, f"report_{date_tag}.pdf")
 
-    print("Step 1/4: Fetching RSS feeds (single pass)...")
+    print("Step 1/5: Fetching RSS feeds (single pass)...")
     feed_items = fetch_feed_items()
     print(f"  Fetched entries: {len(feed_items)}")
 
-    print("Step 2/4: Building raw snapshot records...")
+    print("Step 2/5: Building raw snapshot records...")
     raw_records = collect_raw_rss_records(feed_items)
     raw_payload = [
         {
@@ -72,7 +74,7 @@ async def run_pipeline(model_name: str | None = None) -> None:
     save_jsonl(raw_payload, raw_path)
     print(f"  Saved raw records: {len(raw_payload)} -> {raw_path}")
 
-    print("Step 3/4: Building clean records...")
+    print("Step 3/5: Building clean records...")
     clean_payload, rejected_payload, clean_stats = build_clean_dataset(
         prefetched_items=feed_items,
         clean_dir=dirs["clean"],
@@ -87,7 +89,7 @@ async def run_pipeline(model_name: str | None = None) -> None:
         print("No RSS records matched configured crypto keywords. Skipping scoring.")
         return
 
-    print("Step 4/4: Scoring with Ollama...")
+    print("Step 4/5: Scoring with Ollama...")
     scored_payload = await score_clean_rows(clean_payload, model_to_use)
     save_jsonl(scored_payload, scored_jsonl_path)
     print(f"  Saved scored JSONL: {len(scored_payload)} -> {scored_jsonl_path}")
@@ -120,6 +122,9 @@ async def run_pipeline(model_name: str | None = None) -> None:
             indent=2,
         )
     print(f"  Saved cleaning stats JSON: {stats_path}")
+
+    print("Step 5/5: Generating PDF report...")
+    export_pdf(scored_jsonl_path, pdf_report_path)
 
 
 if __name__ == "__main__":
