@@ -46,7 +46,7 @@ async def run_pipeline(model_name: str | None = None) -> None:
     reject_path = os.path.join(dirs["clean"], f"news_rejected_{date_tag}.jsonl")
     scored_jsonl_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}.jsonl")
     scored_csv_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}.csv")
-    reports_dir = os.path.join("data", "reports")
+    reports_dir = os.path.join("data", "report")
     os.makedirs(reports_dir, exist_ok=True)
     stats_path = os.path.join(reports_dir, f"cleaning_stats_{date_tag}.json")
     fetched_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"

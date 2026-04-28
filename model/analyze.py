@@ -28,6 +28,7 @@ app = FastAPI(
 # Configuration
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")  # Default model, can be changed
+OLLAMA_REQUEST_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_REQUEST_TIMEOUT_SECONDS", "120"))
 PROMPT_VERSION = "v1.1.0"
 
 
@@ -252,7 +253,7 @@ async def analyze_text_sentiment(text: str, model_name: Optional[str] = None) ->
             }
         }
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=OLLAMA_REQUEST_TIMEOUT_SECONDS) as client:
             response = await client.post(ollama_url, json=payload)
             response.raise_for_status()
             
@@ -302,7 +303,8 @@ async def analyze_text_sentiment_robust(text: str, model_name: Optional[str] = N
 async def score_clean_rows(clean_rows: list[dict], model_name: Optional[str] = None) -> list[dict]:
     model_to_use = model_name or OLLAMA_MODEL
     scored_rows: list[dict] = []
-    for row in clean_rows:
+    total_rows = len(clean_rows)
+    for idx, row in enumerate(clean_rows, start=1):
         text = row.get("text_for_model", "")
         score = await analyze_text_sentiment_robust(text, model_to_use)
         label = score_to_label(score)
@@ -319,6 +321,8 @@ async def score_clean_rows(clean_rows: list[dict], model_name: Optional[str] = N
                 "scored_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
             }
         )
+        if idx % 10 == 0 or idx == total_rows:
+            print(f"Scoring progress: {idx}/{total_rows} articles completed", flush=True)
     return scored_rows
 
 
@@ -430,7 +434,7 @@ async def analyze_sentiment(request: SentimentRequest):
             }
         }
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=OLLAMA_REQUEST_TIMEOUT_SECONDS) as client:
             response = await client.post(ollama_url, json=payload)
             response.raise_for_status()
             
@@ -457,7 +461,11 @@ async def analyze_sentiment(request: SentimentRequest):
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail="Request to Ollama timed out. The model may be too slow or unavailable."
+            detail=(
+                "Request to Ollama timed out. "
+                f"Current timeout: {OLLAMA_REQUEST_TIMEOUT_SECONDS}s. "
+                "Set OLLAMA_REQUEST_TIMEOUT_SECONDS to increase it for slower models."
+            )
         )
     except httpx.HTTPStatusError as e:
         raise HTTPException(

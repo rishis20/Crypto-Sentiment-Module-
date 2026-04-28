@@ -2,6 +2,7 @@
 Crypto Sentiment PDF Report Generator
 --------------------------------------
 Usage:
+    python generate_report.py
     python generate_report.py --input <path_to_your_file.jsonl> --output <report.pdf>
 
 Reads a JSONL file of scored crypto news articles and produces a one-page
@@ -13,6 +14,7 @@ import argparse
 import json
 import io
 import sys
+from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -614,17 +616,58 @@ def export_pdf(input_path, output_path):
     }
 
     print("[→] Building PDF…")
-    build_pdf(data, charts, output_path)
+    resolved_output = resolve_output_path(output_path)
+    build_pdf(data, charts, str(resolved_output))
+
+
+def resolve_output_path(output_path: str) -> Path:
+    """Always save reports under model/data/report; keep only filename from output_path."""
+    script_dir = Path(__file__).resolve().parent
+    report_dir = script_dir / "data" / "report"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = Path(output_path).name if output_path else "crypto_sentiment_report.pdf"
+    return report_dir / filename
+
+
+def resolve_default_input_path() -> str:
+    script_dir = Path(__file__).resolve().parent
+    scored_dir = script_dir / "data" / "scored"
+    if not scored_dir.exists():
+        return ""
+
+    preferred = sorted(
+        scored_dir.glob("sentiment_*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if preferred:
+        return str(preferred[0])
+
+    fallback = sorted(
+        scored_dir.glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if fallback:
+        return str(fallback[0])
+    return ""
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Generate crypto sentiment PDF report")
-    parser.add_argument("--input",  "-i", required=True, help="Path to .jsonl sentiment file")
+    parser.add_argument("--input",  "-i", required=False, help="Path to .jsonl sentiment file")
     parser.add_argument("--output", "-o", default="crypto_sentiment_report.pdf",
-                        help="Output PDF path (default: crypto_sentiment_report.pdf)")
+                        help="Output PDF filename (always saved to model/data/report)")
     args = parser.parse_args()
-    export_pdf(args.input, args.output)
+    input_path = args.input or resolve_default_input_path()
+    if not input_path:
+        parser.error(
+            "No default scored JSONL found in model/data/scored. "
+            "Provide one with --input."
+        )
+    export_pdf(input_path, args.output)
 
 if __name__ == "__main__":
     main()
