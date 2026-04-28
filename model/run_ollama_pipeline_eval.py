@@ -19,7 +19,8 @@ from rss_ingest import save_jsonl
 
 
 def ensure_dirs() -> dict:
-    base = "data"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    base = os.path.join(script_dir, "data")
     raw_dir = os.path.join(base, "raw")
     clean_dir = os.path.join(base, "clean")
     scored_dir = os.path.join(base, "scored")
@@ -36,7 +37,8 @@ async def run_pipeline(model_name: str | None = None) -> None:
     scored_jsonl_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}_{model_to_use}.jsonl")
     scored_csv_path = os.path.join(dirs["scored"], f"sentiment_{date_tag}_{model_to_use}.csv")
 
-    file_path = "model/news_clean_2026-04-21.jsonl"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(script_dir, "news_clean_2026-04-21.jsonl")
     clean_payload = []
 
     with open(file_path, 'r', encoding='utf-8') as file:
