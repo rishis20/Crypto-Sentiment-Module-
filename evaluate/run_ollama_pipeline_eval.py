@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -45,14 +46,21 @@ def save_jsonl(rows: list[dict], output_path: Path) -> None:
             file.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def safe_model_slug(model_name: str) -> str:
+    # Keep filenames cross-platform safe (e.g., deepseek-r1:8b -> deepseek-r1-8b).
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", model_name).strip("-")
+    return slug or "model"
+
+
 async def run_pipeline(input_file: str, true_labels_file: str, model_name: str | None) -> None:
     model_to_use = model_name or OLLAMA_MODEL
+    model_slug = safe_model_slug(model_to_use)
     input_path = SCRIPT_DIR / input_file
     true_labels_path = SCRIPT_DIR / true_labels_file
 
-    scored_jsonl_path = SCRIPT_DIR / f"scored_sentiment_{model_to_use}.jsonl"
-    scored_csv_path = SCRIPT_DIR / f"scored_sentiment_{model_to_use}.csv"
-    labelled_csv_path = SCRIPT_DIR / f"labelled_sentiment_{model_to_use}.csv"
+    scored_jsonl_path = SCRIPT_DIR / f"scored_sentiment_{model_slug}.jsonl"
+    scored_csv_path = SCRIPT_DIR / f"scored_sentiment_{model_slug}.csv"
+    labelled_csv_path = SCRIPT_DIR / f"labelled_sentiment_{model_slug}.csv"
 
     clean_payload = load_clean_payload(input_path)
     print(f"Loaded clean payload: {len(clean_payload)} rows from {input_path.name}")
