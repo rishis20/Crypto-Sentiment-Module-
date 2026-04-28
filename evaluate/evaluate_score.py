@@ -37,7 +37,13 @@ def evaluate(input_csv: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate sentiment labels in a scored CSV.")
-    parser.add_argument("input_csv", help="Path to the labeled/scored CSV file")
+    default_csv = Path(__file__).resolve().parent / "labelled_sentiment_llama3.2.csv"
+    parser.add_argument(
+        "input_csv",
+        nargs="?",
+        default=str(default_csv),
+        help="Path to the labeled/scored CSV file (defaults to evaluate/labelled_sentiment_llama3.2.csv).",
+    )
     args = parser.parse_args()
     evaluate(args.input_csv)
 
