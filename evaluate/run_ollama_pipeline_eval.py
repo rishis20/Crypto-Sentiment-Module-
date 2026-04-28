@@ -14,7 +14,7 @@ MODEL_DIR = PROJECT_ROOT / "model"
 
 # Reuse existing model-scoring logic from the model module.
 sys.path.insert(0, str(MODEL_DIR))
-from analyze import OLLAMA_MODEL, score_clean_rows  # noqa: E402
+from analyze import OLLAMA_MODEL, score_clean_rows  
 
 
 def load_clean_payload(input_path: Path) -> list[dict]:
