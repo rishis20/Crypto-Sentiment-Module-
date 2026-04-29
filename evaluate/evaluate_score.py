@@ -28,7 +28,7 @@ def evaluate(input_csv: str) -> None:
     print()
 
     # Full report
-    print(classification_report(df["true_label"], df["label"], digits=4))
+    print(classification_report(df["true_label"], df["label"], digits=4, labels=valid_labels, zero_division=0))
 
     # Confusion matrix
     print("Confusion matrix:")
