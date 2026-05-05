@@ -29,7 +29,7 @@ app = FastAPI(
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")  # Default model, can be changed
 OLLAMA_REQUEST_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_REQUEST_TIMEOUT_SECONDS", "120"))
-PROMPT_VERSION = "v1.1.0"
+PROMPT_VERSION = "v1.3.2-prompt-mod"
 
 
 class SentimentRequest(BaseModel):
@@ -203,7 +203,7 @@ Scoring scale examples:
 Important considerations:
 - For financial/crypto context: Price increases, adoption, partnerships, regulatory approval = positive
 - Price decreases, crashes, hacks, regulatory bans, scams = negative
-- Questions seeking advice are typically neutral unless they express concern or excitement
+- Questions, discussions, and advice-seeking posts are NEUTRAL (score 0.0), regardless of any concerns, skepticism, or negative-sounding words they may contain
 - Headlines with positive action words (wins, gains, rises, approves) = positive
 - Headlines with negative action words (fails, drops, crashes, loses) = negative
 - Factual statements about prices or events without emotional tone = neutral (0.0 to ±0.2)
@@ -246,7 +246,7 @@ async def analyze_text_sentiment(text: str, model_name: Optional[str] = None) ->
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": 0.1,  # Very low temperature for consistent, deterministic results
+                "temperature": 0.0,  # Greedy decoding for stable scores at threshold boundaries
                 "top_p": 0.95,  # High top_p for focused responses
                 "top_k": 40,  # Limit vocabulary for more consistent outputs
                 "repeat_penalty": 1.1  # Slight penalty to avoid repetition
@@ -277,7 +277,7 @@ async def analyze_text_sentiment(text: str, model_name: Optional[str] = None) ->
 def score_to_label(score: float) -> str:
     if score <= -0.2:
         return "bearish"
-    if score >= 0.2:
+    if score >= 0.125:
         return "bullish"
     return "neutral"
 
