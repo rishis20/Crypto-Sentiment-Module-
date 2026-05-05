@@ -1,6 +1,6 @@
 # Crypto Sentiment Module (Local Python Pipeline)
 
-This project runs a local Python pipeline that collects crypto-related RSS items, cleans and filters records, scores sentiment with Ollama, and saves results to JSONL/CSV files.
+This project runs a local Python pipeline that collects crypto-related RSS items, cleans and filters records, scores sentiment with Ollama, saves results to JSONL/CSV files and outputs a pdf report.
 
 ## What this project does
 
@@ -9,6 +9,7 @@ This project runs a local Python pipeline that collects crypto-related RSS items
 - Deduplicates records using a stable hash
 - Scores cleaned text with an Ollama model
 - Exports scored output to JSONL and CSV
+- Generates dashboard-like PDF report for summary statistics and visualization
 
 ## Prerequisites
 
@@ -60,6 +61,7 @@ Each run generates date-based files in `model/data`:
 - `scored/sentiment_YYYY-MM-DD.jsonl`
 - `scored/sentiment_YYYY-MM-DD.csv`
 - `reports/cleaning_stats_YYYY-MM-DD.json`
+- `reports/report_YYYY-MM-DD.pdf`
 
 ## Project structure
 
